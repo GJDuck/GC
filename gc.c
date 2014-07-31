@@ -172,8 +172,10 @@ static void gc_zero_memory(void *ptr, size_t size)
 }
 static int gc_protect_memory(void *ptr, size_t size)
 {
-    void *result = VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
-    return (ptr != result);
+    void *ptr1 = (void *)(((uintptr_t)ptr / GC_PAGESIZE) * GC_PAGESIZE);
+    void *result = VirtualAlloc(ptr1, size + (ptr-ptr1), MEM_COMMIT,
+        PAGE_READWRITE);
+    return (ptr1 != result);
 }
 struct _TEB
 {
@@ -228,7 +230,8 @@ static void gc_free_memory(void *ptr, size_t size)
 }
 static int gc_protect_memory(void *ptr, size_t size)
 {
-    return mprotect(ptr, size, PROT_READ | PROT_WRITE);
+    void *ptr1 = (void *)(((uintptr_t)ptr / GC_PAGESIZE) * GC_PAGESIZE);
+    return mprotect(ptr1, size + (ptr-ptr1), PROT_READ | PROT_WRITE);
 }
 static void *gc_get_stackbottom(void)
 {
@@ -258,23 +261,6 @@ static void __attribute__((noinline)) *gc_stacktop(void)
 {
     void *dummy;
     return (void *)&dummy;
-}
-
-/*
- * Size reciprocal (approx.)
- */
-union gc_f2i_u
-{
-    double f;
-    uint64_t i;
-};
-static double gc_reciprocal(uint32_t size)
-{
-    double r = 1.0 / (double)size;
-    union gc_f2i_u u;
-    u.f = r;
-    u.i++;
-    return u.f;
 }
 
 /*
@@ -309,9 +295,12 @@ extern bool GC_init(void)
         void *startptr = GC_MEMORY + i*GC_REGION_SIZE;
         size_t unit = gc_index_unit(i);
         size_t size = (i - gc_unit_offset(unit))*unit + unit;
+        uintptr_t offset = (uintptr_t)startptr % size;
+        if (offset != 0)
+            startptr += size - offset;
         gc_region_t region = __gc_regions + i;
         region->size         = size;
-        region->inv_size     = gc_reciprocal(size);
+        region->inv_size     = (UINT64_MAX / size) + 1;
         region->freelist     = NULL;
         region->startptr     = startptr;
         region->endptr       = startptr + GC_REGION_SIZE;
@@ -320,6 +309,7 @@ extern bool GC_init(void)
         region->markstartptr = startptr;
         region->markendptr   = startptr;
         region->markptr      = NULL;
+        region->startidx     = gc_objidx(startptr);
     }
 
     // Reserve virtual space for the mark stack.
@@ -482,7 +472,7 @@ nonempty_freelist:
     if (region->markstartptr < region->markendptr)
     {
         ptr = region->markstartptr;
-        uint32_t ptridx = gc_objidx(ptr);
+        uint32_t ptridx = (uint32_t)(gc_objidx(ptr) - region->startidx);
         uint8_t *markptr = region->markptr;
         for (size_t i = 0; i < GC_FREELIST_LEN && ptr < region->markendptr; )
         {
@@ -712,7 +702,7 @@ gc_mark_loop_inner:
             gc_read_prefetch(ptrptr);
             size_t idx = gc_index(ptr);
             gc_region_t region = __gc_regions + idx;
-            if (ptr >= region->freeptr) 
+            if (ptr >= region->freeptr || ptr < region->startptr) 
             {
                 // 'ptr' points to memory that hasn't been allocated yet, or
                 // cannot be collected yet; not a GC pointer.
@@ -722,7 +712,7 @@ gc_mark_loop_inner:
             // 'ptr' has been deemed to be a GC pointer; check if it has been
             // marked;
             uint32_t size = region->size;
-            uint32_t ptridx = gc_objidx(ptr);
+            uint32_t ptridx = (uint32_t)(gc_objidx(ptr) - region->startidx);
             if (!gc_mark_index(region->markptr, ptridx))
             {
                 // 'ptr' is already marked; no need to follow it.
@@ -775,7 +765,7 @@ static void gc_sweep(void)
             returning = true;
 
         // Return memory to the OS:
-        int32_t ptridx = (int32_t)gc_objidx(ptr);
+        int32_t ptridx = (int32_t)(gc_objidx(ptr) - region->startidx);
         int32_t target = ptridx / 2, freesize = 0;
         bool start = true;
         while (true)

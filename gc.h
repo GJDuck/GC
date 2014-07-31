@@ -24,9 +24,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#ifndef GC_INLINE
 #define GC_INLINE static inline __attribute__((__always_inline__))
-#endif      /* GC_INLINE */
+#define GC_CONST  __attribute__((__const__))
 
 /*
  * GC memory base address.
@@ -41,13 +40,9 @@
  * Note: Windows only uses a 8TB region of virtual address space, so we must
  *       make sure that we are inside of it.
  *
- * DEFAULT: Address 0x100000000000 (linux, macosx), 0x100000000 (windows)
+ * DEFAULT: Address 0x200000000
  */
-#ifndef __MINGW32__
-#define GC_MEMORY           ((char *)0x1000000000)
-#else       /* __MINGW32__ */
-#define GC_MEMORY           ((char *)0x100000000)
-#endif      /* __MINGW32__ */
+#define GC_MEMORY           ((char *)0x200000000)
 
 /*
  * GC memory region size.
@@ -108,8 +103,8 @@
 typedef struct gc_freelist_s *gc_freelist_t;
 struct gc_region_s
 {
-    uint32_t size;                              // Region chunk size.
-    double inv_size;                            // 1 / size.
+    size_t size;                                // Region chunk size.
+    size_t inv_size;                            // 1 / size.
     gc_freelist_t freelist;                     // Free-list.
     void *freeptr;                              // Free space pointer.
     void *startptr;                             // Start pointer.
@@ -118,6 +113,7 @@ struct gc_region_s
     void *markstartptr;                         // Marked (start) pointer.
     void *markendptr;                           // Marked (end) pointer.
     uint8_t *markptr;                           // Mark memory pointer.
+    size_t startidx;                            // Start objidx.
 };
 typedef struct gc_region_s *gc_region_t;
 extern struct gc_region_s __gc_regions[GC_NUM_REGIONS];
@@ -292,11 +288,16 @@ GC_INLINE bool GC_isptr(const void *ptr)
  *
  * Given a pointer, return the object's index with the bucket.
  */
+GC_INLINE GC_CONST size_t GC_mul128(size_t x, size_t y)
+{
+    size_t z;
+    asm ("imul %2" : "=d"(z) : "a"(x), "r"(y));
+    return z;
+}
 GC_INLINE uint32_t GC_objidx(void *ptr)
 {
     gc_region_t region = __gc_regions + gc_index(ptr);
-    return (uint32_t)((double)((char *)ptr - (char *)region->startptr) *
-        region->inv_size);
+    return GC_mul128(region->inv_size, (size_t)ptr);
 }
 #define gc_objidx           GC_objidx
 
@@ -309,7 +310,7 @@ GC_INLINE uint32_t GC_objidx(void *ptr)
 GC_INLINE void *GC_base(void *ptr)
 {
     gc_region_t region = __gc_regions + gc_index(ptr);
-    ptr = (char *)region->startptr + GC_objidx(ptr) * region->size;
+    ptr = (void *)(GC_objidx(ptr) * region->size);
     return ptr;
 }
 #define gc_base             GC_base
