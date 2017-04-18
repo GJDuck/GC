@@ -75,3 +75,17 @@ code directly, rather building it as a library and adding an an external
 dependency.  This is not generally feasible with the considerably larger Boehm
 collector.
 
+Related Work
+------------
+
+The fast `GC_size` and `GC_base` operations have some useful applications, such
+as for runtime bounds checking of heap allocated objects.  The memory
+allocator design (minus the "GC" bit) became the basis of our work on "low fat
+pointers" resulting in two publications:
+* Gregory J. Duck, Roland H. C. Yap,
+  [Heap Bounds Protection with Low Fat Pointers](https://www.comp.nus.edu.sg/~gregory/papers/cc16lowfatptrs.pdf),
+  International Conference on Compiler Construction, 2016.
+* Gregory J. Duck, Roland H. C. Yap, Lorenzo Cavallaro,
+  [Stack Bounds Protection with Low Fat Pointers](https://www.comp.nus.edu.sg/~gregory/papers/ndss17stack.pdf),
+  The Network and Distributed System Security Symposium, 2017.
+
