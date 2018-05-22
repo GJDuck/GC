@@ -257,10 +257,11 @@ static void *gc_get_stackbottom(void)
 /*
  * Get the top of the stack.
  */
-static void __attribute__((noinline)) *gc_stacktop(void)
+static __attribute__((noinline)) void *gc_stacktop(void)
 {
-    void *dummy;
-    return (void *)&dummy;
+    void *stack_ptr;
+    asm ("movq %%rsp, %0" : "=r"(stack_ptr));
+    return stack_ptr;
 }
 
 /*
