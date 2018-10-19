@@ -71,7 +71,7 @@ The main application for this GC is the SMCHR system:
 
 The SMCHR system is a reasonably big project (>20,000 LOC).  Since this GC
 design is so lightweight, it is reasonable to incorporate into the SMCHR source
-code directly, rather building it as a library and adding an an external
+code directly, rather building it as a library and adding an external
 dependency.  This is not generally feasible with the considerably larger Boehm
 collector.
 
